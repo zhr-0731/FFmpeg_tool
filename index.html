@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>FFmpeg.wasm 转换工具 · GitHub Pages 版</title>
+    <style>
+        body { font-family: system-ui, 'Segoe UI', monospace; max-width: 900px; margin: 2rem auto; padding: 1rem; background: #f5f7fb; }
+        .card { background: white; border-radius: 1.5rem; padding: 1.8rem; box-shadow: 0 8px 20px rgba(0,0,0,0.05); }
+        .flex { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin: 1.2rem 0; }
+        .group { flex: 1; min-width: 180px; }
+        label { display: block; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.3rem; }
+        input, select, button { width: 100%; padding: 0.6rem 0.8rem; border-radius: 0.8rem; border: 1px solid #cbd5e1; font-size: 0.9rem; box-sizing: border-box; }
+        button { background: #3b82f6; color: white; border: none; font-weight: 600; cursor: pointer; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        .log { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 1rem; font-family: monospace; font-size: 0.8rem; max-height: 300px; overflow-y: auto; white-space: pre-wrap; margin-top: 1rem; }
+        .status { background: #eef2ff; padding: 0.5rem 1rem; border-radius: 2rem; font-size: 0.85rem; margin: 1rem 0; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.5rem 1rem; margin-bottom: 1rem; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>🎬 音视频互转工具 · GitHub Pages 部署</h2>
+    <p>✅ 使用仓库根目录的三个核心文件</p>
+    <div id="warningMsg" class="warning" style="display:none;"></div>
+
+    <div class="flex">
+        <div class="group">
+            <label>📁 选择文件</label>
+            <input type="file" id="fileInput" accept="video/*,audio/*">
+        </div>
+        <div class="group">
+            <label>🎞️ 输出格式</label>
+            <select id="outputFormat">
+                <option value="mp4">MP4</option>
+                <option value="webm">WebM</option>
+                <option value="mov">MOV</option>
+                <option value="mkv">MKV</option>
+                <option value="avi">AVI</option>
+                <option value="gif">GIF</option>
+                <option value="mp3">MP3</option>
+                <option value="ogg">OGG</option>
+            </select>
+        </div>
+        <div class="group">
+            <label>⚙️ 操作</label>
+            <button id="convertBtn" disabled>开始转换</button>
+        </div>
+    </div>
+
+    <div class="status" id="statusMsg">⚡ 就绪，选择文件后自动加载核心</div>
+    <div class="log" id="logArea">[系统] 页面已加载，核心文件将与 HTML 同目录。</div>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "@ffmpeg/ffmpeg": "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js",
+            "@ffmpeg/util": "https://unpkg.com/@ffmpeg/util@0.12.4/dist/esm/index.js"
+        }
+    }
+</script>
+
+<script type="module">
+    import { FFmpeg } from '@ffmpeg/ffmpeg';
+    import { fetchFile, toBlobURL } from '@ffmpeg/util';
+
+    const fileInput = document.getElementById('fileInput');
+    const outputFormat = document.getElementById('outputFormat');
+    const convertBtn = document.getElementById('convertBtn');
+    const statusDiv = document.getElementById('statusMsg');
+    const logArea = document.getElementById('logArea');
+    const warningMsg = document.getElementById('warningMsg');
+
+    let ffmpeg = null;
+    let loaded = false;
+    let selectedFile = null;
+
+    function addLog(msg, isError = false) {
+        const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        logArea.innerText += line + '\n';
+        logArea.scrollTop = logArea.scrollHeight;
+        statusDiv.innerText = isError ? `❌ ${msg}` : msg;
+    }
+
+    // 检测是否具备跨域隔离条件（SharedArrayBuffer）
+    function checkIsolation() {
+        if (typeof SharedArrayBuffer === 'undefined') {
+            warningMsg.style.display = 'block';
+            warningMsg.innerHTML = '⚠️ 当前浏览器不支持 SharedArrayBuffer，多线程核心无法工作。建议使用单线程核心（但您提供的文件为多线程版）。转换可能失败。';
+            return false;
+        }
+        if (!crossOriginIsolated) {
+            warningMsg.style.display = 'block';
+            warningMsg.innerHTML = '⚠️ 页面未启用跨域隔离（Cross-Origin Isolated）。GitHub Pages 默认不加 COOP/COEP 头，多线程核心无法使用 SharedArrayBuffer。转换可能失败。';
+            return false;
+        }
+        warningMsg.style.display = 'none';
+        return true;
+    }
+
+    // 加载本地核心文件（多线程版）
+    async function initFFmpeg() {
+        if (loaded) return true;
+        addLog('🚀 正在从本地加载 FFmpeg 多线程核心...');
+        checkIsolation(); // 只提示，不阻止尝试
+        try {
+            ffmpeg = new FFmpeg();
+            await ffmpeg.load({
+                coreURL: await toBlobURL('./ffmpeg-core.js', 'text/javascript'),
+                wasmURL: await toBlobURL('./ffmpeg-core.wasm', 'application/wasm'),
+                workerURL: await toBlobURL('./ffmpeg-core.worker.js', 'text/javascript')
+            });
+            loaded = true;
+            addLog('✅ 本地核心加载成功！');
+            return true;
+        } catch (err) {
+            addLog(`❌ 加载失败: ${err.message}`, true);
+            return false;
+        }
+    }
+
+    function buildArgs(outputExt) {
+        const args = ['-i', 'input', '-y'];
+        switch (outputExt) {
+            case 'mp4': args.push('-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac'); break;
+            case 'webm': args.push('-c:v', 'libvpx-vp9', '-crf', '30', '-c:a', 'libopus'); break;
+            case 'mov': args.push('-c:v', 'libx264', '-c:a', 'aac'); break;
+            case 'mkv': args.push('-c:v', 'libx264', '-c:a', 'aac'); break;
+            case 'avi': args.push('-c:v', 'libx264', '-c:a', 'mp3'); break;
+            case 'gif': args.push('-vf', 'fps=10,scale=512:-1:flags=lanczos'); break;
+            case 'mp3': args.push('-vn', '-c:a', 'libmp3lame', '-b:a', '192k'); break;
+            case 'ogg': args.push('-vn', '-c:a', 'libvorbis', '-q:a', '4'); break;
+            default: args.push('-c', 'copy');
+        }
+        args.push(`output.${outputExt}`);
+        return args;
+    }
+
+    async function convert() {
+        if (!selectedFile) { addLog('请先选择文件', true); return; }
+        if (!loaded) {
+            addLog('核心未加载，正在加载...');
+            const ok = await initFFmpeg();
+            if (!ok) return;
+        }
+        convertBtn.disabled = true;
+        const ext = outputFormat.value;
+        addLog(`🎬 开始转换: ${selectedFile.name} → ${ext.toUpperCase()}`);
+        try {
+            await ffmpeg.writeFile('input', await fetchFile(selectedFile));
+            const args = buildArgs(ext);
+            addLog(`⚙️ 命令: ffmpeg ${args.join(' ')}`);
+            await ffmpeg.exec(args);
+            const data = await ffmpeg.readFile(`output.${ext}`);
+            const mime = ext === 'mp4' ? 'video/mp4' : ext === 'webm' ? 'video/webm' : ext === 'gif' ? 'image/gif' : ext === 'mp3' ? 'audio/mpeg' : ext === 'ogg' ? 'audio/ogg' : 'application/octet-stream';
+            const blob = new Blob([data.buffer], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `converted_${Date.now()}.${ext}`;
+            a.click();
+            URL.revokeObjectURL(url);
+            addLog(`✅ 转换完成！已下载 ${(blob.size/1048576).toFixed(2)} MB`);
+            await ffmpeg.deleteFile('input').catch(()=>{});
+            await ffmpeg.deleteFile(`output.${ext}`).catch(()=>{});
+        } catch (err) {
+            addLog(`❌ 转换失败: ${err.message}`, true);
+        } finally {
+            convertBtn.disabled = false;
+        }
+    }
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files[0]) {
+            selectedFile = e.target.files[0];
+            addLog(`📁 已选择: ${selectedFile.name} (${(selectedFile.size/1048576).toFixed(2)} MB)`);
+            convertBtn.disabled = false;
+            if (!loaded) initFFmpeg();
+        } else {
+            selectedFile = null;
+            convertBtn.disabled = true;
+        }
+    });
+    convertBtn.addEventListener('click', convert);
+</script>
+</body>
+</html>
