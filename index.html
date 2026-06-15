@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>FFmpeg.wasm 转换工具 · GitHub Pages 版</title>
+    <title>FFmpeg 转换工具 · 核心文件来自本仓库</title>
     <style>
         body { font-family: system-ui, 'Segoe UI', monospace; max-width: 900px; margin: 2rem auto; padding: 1rem; background: #f5f7fb; }
         .card { background: white; border-radius: 1.5rem; padding: 1.8rem; box-shadow: 0 8px 20px rgba(0,0,0,0.05); }
@@ -14,14 +14,12 @@
         button:disabled { background: #94a3b8; cursor: not-allowed; }
         .log { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 1rem; font-family: monospace; font-size: 0.8rem; max-height: 300px; overflow-y: auto; white-space: pre-wrap; margin-top: 1rem; }
         .status { background: #eef2ff; padding: 0.5rem 1rem; border-radius: 2rem; font-size: 0.85rem; margin: 1rem 0; }
-        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.5rem 1rem; margin-bottom: 1rem; font-size: 0.85rem; }
     </style>
 </head>
 <body>
 <div class="card">
-    <h2>🎬 音视频互转工具 · GitHub Pages 部署</h2>
-    <p>✅ 使用仓库根目录的三个核心文件</p>
-    <div id="warningMsg" class="warning" style="display:none;"></div>
+    <h2>🎬 音视频互转工具 · 仓库本地核心</h2>
+    <p>✅ 核心文件 <code>ffmpeg-core.js</code> 和 <code>ffmpeg-core.wasm</code> 来自本仓库根目录</p>
 
     <div class="flex">
         <div class="group">
@@ -47,15 +45,16 @@
         </div>
     </div>
 
-    <div class="status" id="statusMsg">⚡ 就绪，选择文件后自动加载核心</div>
-    <div class="log" id="logArea">[系统] 页面已加载，核心文件将与 HTML 同目录。</div>
+    <div class="status" id="statusMsg">⚡ 就绪，选择文件后自动加载本地核心</div>
+    <div class="log" id="logArea">[系统] 页面已加载，核心文件将从本仓库加载。</div>
 </div>
 
+<!-- 辅助库从 CDN 引入（支持 CORS） -->
 <script type="importmap">
     {
         "imports": {
-            "@ffmpeg/ffmpeg": "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js",
-            "@ffmpeg/util": "https://unpkg.com/@ffmpeg/util@0.12.4/dist/esm/index.js"
+            "@ffmpeg/ffmpeg": "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js",
+            "@ffmpeg/util": "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.4/dist/esm/index.js"
         }
     }
 </script>
@@ -69,7 +68,6 @@
     const convertBtn = document.getElementById('convertBtn');
     const statusDiv = document.getElementById('statusMsg');
     const logArea = document.getElementById('logArea');
-    const warningMsg = document.getElementById('warningMsg');
 
     let ffmpeg = null;
     let loaded = false;
@@ -82,39 +80,23 @@
         statusDiv.innerText = isError ? `❌ ${msg}` : msg;
     }
 
-    // 检测是否具备跨域隔离条件（SharedArrayBuffer）
-    function checkIsolation() {
-        if (typeof SharedArrayBuffer === 'undefined') {
-            warningMsg.style.display = 'block';
-            warningMsg.innerHTML = '⚠️ 当前浏览器不支持 SharedArrayBuffer，多线程核心无法工作。建议使用单线程核心（但您提供的文件为多线程版）。转换可能失败。';
-            return false;
-        }
-        if (!crossOriginIsolated) {
-            warningMsg.style.display = 'block';
-            warningMsg.innerHTML = '⚠️ 页面未启用跨域隔离（Cross-Origin Isolated）。GitHub Pages 默认不加 COOP/COEP 头，多线程核心无法使用 SharedArrayBuffer。转换可能失败。';
-            return false;
-        }
-        warningMsg.style.display = 'none';
-        return true;
-    }
-
-    // 加载本地核心文件（多线程版）
+    // 从当前仓库根目录加载核心文件（单线程版）
     async function initFFmpeg() {
         if (loaded) return true;
-        addLog('🚀 正在从本地加载 FFmpeg 多线程核心...');
-        checkIsolation(); // 只提示，不阻止尝试
+        addLog('🚀 正在从本仓库加载 FFmpeg 核心文件...');
         try {
             ffmpeg = new FFmpeg();
+            // 关键：直接指向仓库根目录下的文件
             await ffmpeg.load({
                 coreURL: await toBlobURL('./ffmpeg-core.js', 'text/javascript'),
-                wasmURL: await toBlobURL('./ffmpeg-core.wasm', 'application/wasm'),
-                workerURL: await toBlobURL('./ffmpeg-core.worker.js', 'text/javascript')
+                wasmURL: await toBlobURL('./ffmpeg-core.wasm', 'application/wasm')
+                // 注意：单线程版不需要 workerURL
             });
             loaded = true;
-            addLog('✅ 本地核心加载成功！');
+            addLog('✅ 本地核心加载成功，可以转换了');
             return true;
         } catch (err) {
-            addLog(`❌ 加载失败: ${err.message}`, true);
+            addLog(`❌ 加载失败: ${err.message}。请确认仓库根目录存在 ffmpeg-core.js 和 ffmpeg-core.wasm`, true);
             return false;
         }
     }
