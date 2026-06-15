@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write        # 允许提交文件
+  contents: write
   pages: write
   id-token: write
 
@@ -23,21 +23,28 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download FFmpeg core files (single‑thread, compatible with GitHub Pages)
         run: |
           curl -L -o ffmpeg-core.js https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js
           curl -L -o ffmpeg-core.wasm https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm
-          # 注意：单线程版不需要 .worker.js 文件
           ls -la ffmpeg-core.*
 
-      - name: Commit and push downloaded files (if changed)
+      - name: Commit and push downloaded files (with merge if needed)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ffmpeg-core.js ffmpeg-core.wasm
-          git diff --cached --quiet || git commit -m "Add FFmpeg core files (single-thread)"
-          git push origin main
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update FFmpeg core files (single-thread)"
+            # 尝试拉取远程更改并变基，解决冲突后继续推送
+            git pull --rebase origin main
+            git push origin main
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
