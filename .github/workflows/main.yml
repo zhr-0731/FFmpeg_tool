@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write        # 需要写入权限才能添加下载的文件到仓库
+  contents: write        # 允许提交文件
   pages: write
   id-token: write
 
@@ -24,24 +24,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download FFmpeg core files (single-thread, 0.12.10)
+      - name: Download FFmpeg core files (single‑thread, compatible with GitHub Pages)
         run: |
-          # 下载单线程版核心（仅需两个文件，无需 worker，兼容 GitHub Pages 无 COOP/COEP 头）
           curl -L -o ffmpeg-core.js https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js
           curl -L -o ffmpeg-core.wasm https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm
-          # 如果必须使用多线程版（三个文件），请取消注释下面三行并注释掉上面的两行
-          # curl -L -o ffmpeg-core.js https://unpkg.com/@ffmpeg/core-mt@0.12.10/dist/umd/ffmpeg-core.js
-          # curl -L -o ffmpeg-core.wasm https://unpkg.com/@ffmpeg/core-mt@0.12.10/dist/umd/ffmpeg-core.wasm
-          # curl -L -o ffmpeg-core.worker.js https://unpkg.com/@ffmpeg/core-mt@0.12.10/dist/umd/ffmpeg-core.worker.js
-          echo "Download completed"
+          # 注意：单线程版不需要 .worker.js 文件
+          ls -la ffmpeg-core.*
 
       - name: Commit and push downloaded files (if changed)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ffmpeg-core.js ffmpeg-core.wasm ffmpeg-core.worker.js 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "Update FFmpeg core files from CDN"
-          git push
+          git add ffmpeg-core.js ffmpeg-core.wasm
+          git diff --cached --quiet || git commit -m "Add FFmpeg core files (single-thread)"
+          git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
