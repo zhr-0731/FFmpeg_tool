@@ -1,0 +1,35 @@
+name: Backup to GitCode
+
+on:
+  # 每7天执行一次 (UTC 时间每周一 00:00)
+  schedule:
+    - cron: '0 0 * * 1'
+  # 允许手动触发
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add GitCode remote
+        run: |
+          # 使用令牌进行身份验证
+          git remote add gitcode https://zhr-0731:${{ secrets.GITCODE_TOKEN }}@gitcode.com/zhr-0731/css_style_example_back.git
+          git fetch gitcode
+
+      - name: Push to GitCode (force)
+        run: |
+          # 获取当前分支名
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          # 强制推送到 GitCode 的对应分支，完全覆盖
+          git push gitcode HEAD:$BRANCH --force
